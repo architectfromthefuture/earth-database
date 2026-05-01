@@ -31,18 +31,23 @@ class MemoryFlowTests(unittest.TestCase):
 
             item = storage.get_item(result.item_id)
             provenance = storage.get_provenance_for_item(result.item_id)
+            event = storage.get_event(result.event_id)
             jobs = storage.list_jobs(status="pending")
 
             self.assertIsNotNone(item)
             self.assertEqual(item.tags, ("latency", "memory"))
             self.assertIsNotNone(provenance)
+            self.assertIsNotNone(event)
+            self.assertEqual(event.source_type, "internal_event")
             self.assertEqual(provenance.content_hash, result.content_hash)
             self.assertEqual(provenance.event_id, result.event_id)
             self.assertEqual({job.job_type for job in jobs}, {"build_summary", "build_embedding"})
             self.assertTrue(all(job.status == "pending" for job in jobs))
 
             log_lines = (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(json.loads(log_lines[-1])["event"], "item_ingested")
+            logged_events = [json.loads(line)["event"] for line in log_lines]
+            self.assertIn("item_ingested", logged_events)
+            self.assertIn("trust_classification_applied", logged_events)
 
     def test_retrieval_uses_exact_filters_and_fts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

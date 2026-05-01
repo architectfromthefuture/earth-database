@@ -70,6 +70,35 @@ class ProvenanceRecord:
     captured_at_utc: str
 
 
+@dataclass(frozen=True)
+class EventRecord:
+    """Storage event with provenance and authority metadata for prompt-injection defense."""
+
+    id: str
+    item_id: str | None
+    stage: str
+    event_type: str
+    payload: dict[str, Any]
+    ts_utc: str
+    source_type: str | None
+    trust_zone: str | None
+    content_role: str | None
+    injection_risk: str | None
+    can_instruct: bool | None
+    can_call_tools: bool | None
+    can_override_policy: bool | None
+    provenance_note: str | None
+
+
+@dataclass(frozen=True)
+class ObservationMemoryRecord:
+    id: str
+    source_event_id: str
+    item_id: str | None
+    observation: str
+    created_at_utc: str
+
+
 class EarthStorage:
     """Small repository layer around SQLite.
 
@@ -143,11 +172,30 @@ class EarthStorage:
                     stage TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     payload_json TEXT NOT NULL DEFAULT '{}',
+                    source_type TEXT,
+                    trust_zone TEXT,
+                    content_role TEXT,
+                    injection_risk TEXT,
+                    can_instruct INTEGER,
+                    can_call_tools INTEGER,
+                    can_override_policy INTEGER,
+                    provenance_note TEXT,
                     ts_utc TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_events_item
                     ON events(item_id, ts_utc);
+
+                CREATE TABLE IF NOT EXISTS observation_memories (
+                    id TEXT PRIMARY KEY,
+                    source_event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                    item_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+                    observation TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_observation_memories_source_event
+                    ON observation_memories(source_event_id);
 
                 CREATE TABLE IF NOT EXISTS provenance (
                     id TEXT PRIMARY KEY,
@@ -188,6 +236,7 @@ class EarthStorage:
                     USING fts5(item_id UNINDEXED, content, source_uri UNINDEXED, tags);
                 """
             )
+            self._upgrade_schema(conn)
 
     def insert_ingested_item(
         self,
@@ -206,6 +255,7 @@ class EarthStorage:
         constraints: dict[str, Any],
         now_utc: str,
         conn: sqlite3.Connection,
+        trust_metadata: dict[str, Any] | None = None,
     ) -> None:
         conn.execute(
             """
@@ -240,9 +290,11 @@ class EarthStorage:
                 "content_hash": content_hash,
                 "source_uri": source_uri,
                 "source_type": source_type,
+                "metadata": metadata,
                 "tags": list(tags),
             },
             now_utc=now_utc,
+            trust_metadata=trust_metadata,
         )
         conn.execute(
             """
@@ -280,13 +332,55 @@ class EarthStorage:
         event_type: str,
         payload: dict[str, Any],
         now_utc: str,
+        trust_metadata: dict[str, Any] | None = None,
+    ) -> None:
+        trust = trust_metadata or {}
+        conn.execute(
+            """
+            INSERT INTO events (
+                id, item_id, stage, event_type, payload_json,
+                source_type, trust_zone, content_role, injection_risk,
+                can_instruct, can_call_tools, can_override_policy, provenance_note,
+                ts_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                item_id,
+                stage,
+                event_type,
+                to_json(payload),
+                trust.get("source_type"),
+                trust.get("trust_zone"),
+                trust.get("content_role"),
+                trust.get("injection_risk"),
+                _optional_bool_int(trust.get("can_instruct")),
+                _optional_bool_int(trust.get("can_call_tools")),
+                _optional_bool_int(trust.get("can_override_policy")),
+                trust.get("provenance_note"),
+                now_utc,
+            ),
+        )
+
+    def insert_observation_memory(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        observation_id: str,
+        source_event_id: str,
+        item_id: str | None,
+        observation: str,
+        now_utc: str,
     ) -> None:
         conn.execute(
             """
-            INSERT INTO events (id, item_id, stage, event_type, payload_json, ts_utc)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO observation_memories (
+                id, source_event_id, item_id, observation, created_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (event_id, item_id, stage, event_type, to_json(payload), now_utc),
+            (observation_id, source_event_id, item_id, observation, now_utc),
         )
 
     def enqueue_job(
@@ -345,6 +439,74 @@ class EarthStorage:
             if row is None:
                 return None
             return self._provenance_from_row(row)
+
+    def get_event(self, event_id: str) -> EventRecord | None:
+        with self.connection() as conn:
+            row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+            if row is None:
+                return None
+            return self._event_from_row(row)
+
+    def list_observation_memories(
+        self,
+        *,
+        source_event_id: str | None = None,
+        item_id: str | None = None,
+        limit: int = 100,
+    ) -> list[ObservationMemoryRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source_event_id:
+            clauses.append("source_event_id = ?")
+            params.append(source_event_id)
+        if item_id:
+            clauses.append("item_id = ?")
+            params.append(item_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM observation_memories
+                {where}
+                ORDER BY created_at_utc DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            return [self._observation_from_row(row) for row in rows]
+
+    def _upgrade_schema(self, conn: sqlite3.Connection) -> None:
+        event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        for column_name, column_type in (
+            ("source_type", "TEXT"),
+            ("trust_zone", "TEXT"),
+            ("content_role", "TEXT"),
+            ("injection_risk", "TEXT"),
+            ("can_instruct", "INTEGER"),
+            ("can_call_tools", "INTEGER"),
+            ("can_override_policy", "INTEGER"),
+            ("provenance_note", "TEXT"),
+        ):
+            if column_name not in event_columns:
+                conn.execute(f"ALTER TABLE events ADD COLUMN {column_name} {column_type}")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS observation_memories (
+                id TEXT PRIMARY KEY,
+                source_event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                item_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+                observation TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_observation_memories_source_event
+                ON observation_memories(source_event_id)
+            """
+        )
 
     def find_by_hash(self, content_hash: str, *, limit: int) -> list[ItemRecord]:
         with self.connection() as conn:
@@ -521,6 +683,33 @@ class EarthStorage:
             updated_at_utc=row["updated_at_utc"],
         )
 
+    def _event_from_row(self, row: sqlite3.Row) -> EventRecord:
+        return EventRecord(
+            id=row["id"],
+            item_id=row["item_id"],
+            stage=row["stage"],
+            event_type=row["event_type"],
+            payload=from_json(row["payload_json"]),
+            ts_utc=row["ts_utc"],
+            source_type=row["source_type"],
+            trust_zone=row["trust_zone"],
+            content_role=row["content_role"],
+            injection_risk=row["injection_risk"],
+            can_instruct=_optional_int_bool(row["can_instruct"]),
+            can_call_tools=_optional_int_bool(row["can_call_tools"]),
+            can_override_policy=_optional_int_bool(row["can_override_policy"]),
+            provenance_note=row["provenance_note"],
+        )
+
+    def _observation_from_row(self, row: sqlite3.Row) -> ObservationMemoryRecord:
+        return ObservationMemoryRecord(
+            id=row["id"],
+            source_event_id=row["source_event_id"],
+            item_id=row["item_id"],
+            observation=row["observation"],
+            created_at_utc=row["created_at_utc"],
+        )
+
     def _provenance_from_row(self, row: sqlite3.Row) -> ProvenanceRecord:
         return ProvenanceRecord(
             id=row["id"],
@@ -534,3 +723,27 @@ class EarthStorage:
             constraints_json=from_json(row["constraints_json"]),
             captured_at_utc=row["captured_at_utc"],
         )
+
+    def _ensure_column(
+        self,
+        conn: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_definition: str,
+    ) -> None:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        if any(row["name"] == column_name for row in rows):
+            return
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+
+
+def _optional_bool_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return 1 if bool(value) else 0
+
+
+def _optional_int_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
