@@ -38,7 +38,7 @@ class MemoryFlowTests(unittest.TestCase):
             self.assertEqual(item.tags, ("latency", "memory"))
             self.assertIsNotNone(provenance)
             self.assertIsNotNone(event)
-            self.assertEqual(event.source_type, "internal_event")
+            self.assertEqual(event.source_type, "unknown")
             self.assertEqual(provenance.content_hash, result.content_hash)
             self.assertEqual(provenance.event_id, result.event_id)
             self.assertEqual({job.job_type for job in jobs}, {"build_summary", "build_embedding"})

@@ -30,25 +30,6 @@ from earth_database.trust.schema import (
 
 DEFAULT_BACKGROUND_JOBS = ("build_summary", "build_embedding")
 
-LEGACY_INTERNAL_SOURCE_TYPES = {
-    "cli": SourceType.INTERNAL_EVENT,
-    "internal": SourceType.INTERNAL_EVENT,
-    "system": SourceType.INTERNAL_EVENT,
-    "test": SourceType.INTERNAL_EVENT,
-}
-
-LEGACY_EXTERNAL_SOURCE_TYPES = {
-    "email": SourceType.EXTERNAL_EMAIL,
-    "html": SourceType.EXTERNAL_WEBPAGE,
-    "markdown": SourceType.UPLOADED_FILE,
-    "pdf": SourceType.UPLOADED_FILE,
-    "repo": SourceType.EXTERNAL_REPO_FILE,
-    "text": SourceType.UNKNOWN,
-    "upload": SourceType.UPLOADED_FILE,
-    "web": SourceType.EXTERNAL_WEBPAGE,
-    "webpage": SourceType.EXTERNAL_WEBPAGE,
-}
-
 
 @dataclass(frozen=True)
 class IngestResult:
@@ -80,6 +61,7 @@ class IngestionService:
         content: str,
         source_uri: str,
         source_type: str = "text",
+        trust_source_type: str | SourceType | None = None,
         content_role: str | ContentRole | None = None,
         provenance_note: str | None = None,
         tags: tuple[str, ...] | list[str] | None = None,
@@ -102,7 +84,10 @@ class IngestionService:
         content_hash = content_sha256(content)
         trust = _classify_and_scan(
             content=content,
-            source_type=_trust_source_type(source_type),
+            source_type=_trust_source_type(
+                source_type=source_type,
+                trust_source_type=trust_source_type,
+            ),
             content_role=content_role,
             provenance_note=provenance_note,
         )
@@ -252,16 +237,15 @@ def _safe_scan_text(payload: Any) -> str:
         return str(payload)
 
 
-def _trust_source_type(source_type: str | SourceType | None) -> SourceType:
+def _trust_source_type(
+    *,
+    source_type: str | SourceType | None,
+    trust_source_type: str | SourceType | None = None,
+) -> SourceType:
+    if trust_source_type is not None:
+        return coerce_source_type(trust_source_type)
     normalized = coerce_source_type(source_type)
     if normalized != SourceType.UNKNOWN:
         return normalized
-    if source_type is None:
-        return SourceType.UNKNOWN
-    storage_label = str(source_type).strip().casefold()
-    if storage_label in LEGACY_INTERNAL_SOURCE_TYPES:
-        return LEGACY_INTERNAL_SOURCE_TYPES[storage_label]
-    if storage_label in LEGACY_EXTERNAL_SOURCE_TYPES:
-        return LEGACY_EXTERNAL_SOURCE_TYPES[storage_label]
     return SourceType.UNKNOWN
 

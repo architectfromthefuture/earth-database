@@ -51,6 +51,15 @@ The demo creates a local SQLite database and JSONL trace under a temporary
 directory, ingests one record, retrieves it through FTS, and prints queued
 background jobs.
 
+Security inspection commands can point at a persistent database:
+
+```bash
+python -m earth_database --db .earth-database/earth.db demo-malicious
+python -m earth_database --db .earth-database/earth.db high-risk
+python -m earth_database --db .earth-database/earth.db trust-zones
+python -m earth_database --db .earth-database/earth.db security-observations
+```
+
 ## Architecture At A Glance
 
 ```mermaid
@@ -100,6 +109,18 @@ python -m earth_database --help
 ```
 
 If you install dev tooling, the same tests are also pytest-compatible.
+
+## Security inspection demo
+
+Use a persistent database path to inspect trust decisions after ingesting the
+malicious README demo:
+
+```bash
+python -m earth_database --db /tmp/earth.db demo-malicious
+python -m earth_database --db /tmp/earth.db high-risk
+python -m earth_database --db /tmp/earth.db trust-zones
+python -m earth_database --db /tmp/earth.db security-observations
+```
 
 ## License
 
