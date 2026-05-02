@@ -40,6 +40,27 @@ class ItemRecord:
 
 
 @dataclass(frozen=True)
+class ChunkRecord:
+    id: str
+    item_id: str
+    source_event_id: str
+    chunk_index: int
+    content: str
+    char_start: int
+    char_end: int
+    token_count: int
+    source_type: str | None
+    trust_zone: str | None
+    content_role: str | None
+    injection_risk: str | None
+    can_instruct: bool | None
+    can_call_tools: bool | None
+    can_override_policy: bool | None
+    provenance_note: str | None
+    created_at_utc: str
+
+
+@dataclass(frozen=True)
 class JobRecord:
     id: str
     job_type: str
@@ -165,6 +186,33 @@ class EarthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_item_tags_tag
                     ON item_tags(tag);
+
+                CREATE TABLE IF NOT EXISTS item_chunks (
+                    id TEXT PRIMARY KEY,
+                    item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                    source_event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    char_start INTEGER NOT NULL,
+                    char_end INTEGER NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    source_type TEXT,
+                    trust_zone TEXT,
+                    content_role TEXT,
+                    injection_risk TEXT,
+                    can_instruct INTEGER,
+                    can_call_tools INTEGER,
+                    can_override_policy INTEGER,
+                    provenance_note TEXT,
+                    created_at_utc TEXT NOT NULL,
+                    UNIQUE(item_id, chunk_index)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_item_chunks_item
+                    ON item_chunks(item_id, chunk_index);
+
+                CREATE INDEX IF NOT EXISTS idx_item_chunks_source_event
+                    ON item_chunks(source_event_id);
 
                 CREATE TABLE IF NOT EXISTS events (
                     id TEXT PRIMARY KEY,
@@ -383,6 +431,53 @@ class EarthStorage:
             (observation_id, source_event_id, item_id, observation, now_utc),
         )
 
+    def insert_item_chunk(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        chunk_id: str,
+        item_id: str,
+        source_event_id: str,
+        chunk_index: int,
+        content: str,
+        char_start: int,
+        char_end: int,
+        token_count: int,
+        trust_metadata: dict[str, Any],
+        now_utc: str,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO item_chunks (
+                id, item_id, source_event_id, chunk_index, content,
+                char_start, char_end, token_count,
+                source_type, trust_zone, content_role, injection_risk,
+                can_instruct, can_call_tools, can_override_policy, provenance_note,
+                created_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                chunk_id,
+                item_id,
+                source_event_id,
+                chunk_index,
+                content,
+                char_start,
+                char_end,
+                token_count,
+                trust_metadata.get("source_type"),
+                trust_metadata.get("trust_zone"),
+                trust_metadata.get("content_role"),
+                trust_metadata.get("injection_risk"),
+                _optional_bool_int(trust_metadata.get("can_instruct")),
+                _optional_bool_int(trust_metadata.get("can_call_tools")),
+                _optional_bool_int(trust_metadata.get("can_override_policy")),
+                trust_metadata.get("provenance_note"),
+                now_utc,
+            ),
+        )
+
     def enqueue_job(
         self,
         *,
@@ -476,6 +571,18 @@ class EarthStorage:
             ).fetchall()
             return [self._observation_from_row(row) for row in rows]
 
+    def list_chunks_for_item(self, item_id: str) -> list[ChunkRecord]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM item_chunks
+                WHERE item_id = ?
+                ORDER BY chunk_index
+                """,
+                (item_id,),
+            ).fetchall()
+            return [self._chunk_from_row(row) for row in rows]
+
     def _upgrade_schema(self, conn: sqlite3.Connection) -> None:
         event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
         for column_name, column_type in (
@@ -505,6 +612,42 @@ class EarthStorage:
             """
             CREATE INDEX IF NOT EXISTS idx_observation_memories_source_event
                 ON observation_memories(source_event_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS item_chunks (
+                id TEXT PRIMARY KEY,
+                item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                source_event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                char_start INTEGER NOT NULL,
+                char_end INTEGER NOT NULL,
+                token_count INTEGER NOT NULL,
+                source_type TEXT,
+                trust_zone TEXT,
+                content_role TEXT,
+                injection_risk TEXT,
+                can_instruct INTEGER,
+                can_call_tools INTEGER,
+                can_override_policy INTEGER,
+                provenance_note TEXT,
+                created_at_utc TEXT NOT NULL,
+                UNIQUE(item_id, chunk_index)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_item_chunks_item
+                ON item_chunks(item_id, chunk_index)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_item_chunks_source_event
+                ON item_chunks(source_event_id)
             """
         )
 
@@ -681,6 +824,27 @@ class EarthStorage:
             last_error=row["last_error"],
             created_at_utc=row["created_at_utc"],
             updated_at_utc=row["updated_at_utc"],
+        )
+
+    def _chunk_from_row(self, row: sqlite3.Row) -> ChunkRecord:
+        return ChunkRecord(
+            id=row["id"],
+            item_id=row["item_id"],
+            source_event_id=row["source_event_id"],
+            chunk_index=row["chunk_index"],
+            content=row["content"],
+            char_start=row["char_start"],
+            char_end=row["char_end"],
+            token_count=row["token_count"],
+            source_type=row["source_type"],
+            trust_zone=row["trust_zone"],
+            content_role=row["content_role"],
+            injection_risk=row["injection_risk"],
+            can_instruct=_optional_int_bool(row["can_instruct"]),
+            can_call_tools=_optional_int_bool(row["can_call_tools"]),
+            can_override_policy=_optional_int_bool(row["can_override_policy"]),
+            provenance_note=row["provenance_note"],
+            created_at_utc=row["created_at_utc"],
         )
 
     def _event_from_row(self, row: sqlite3.Row) -> EventRecord:

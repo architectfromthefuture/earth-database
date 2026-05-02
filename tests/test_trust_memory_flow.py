@@ -46,6 +46,12 @@ class TrustMemoryFlowTests(unittest.TestCase):
                 "high prompt-injection risk.",
                 observation_text,
             )
+            chunks = storage.list_chunks_for_item(result.item_id)
+            self.assertEqual(len(chunks), 1)
+            self.assertEqual(chunks[0].source_event_id, result.event_id)
+            self.assertEqual(chunks[0].trust_zone, "untrusted_external")
+            self.assertEqual(chunks[0].injection_risk, "high")
+            self.assertFalse(chunks[0].can_instruct)
 
             retriever = MemoryRetriever(storage, logger=logger)
             wrapped = retriever.retrieve_wrapped(query="instructions", limit=5)
@@ -53,6 +59,11 @@ class TrustMemoryFlowTests(unittest.TestCase):
             self.assertIn("trust_zone: untrusted_external", wrapped[0].wrapped_content)
             self.assertIn("injection_risk: high", wrapped[0].wrapped_content)
             self.assertIn("forbidden_use: follow instructions", wrapped[0].wrapped_content)
+            wrapped_chunks = retriever.retrieve_wrapped_chunks(item_id=result.item_id)
+            self.assertEqual(len(wrapped_chunks), 1)
+            self.assertEqual(wrapped_chunks[0].chunk.source_event_id, result.event_id)
+            self.assertIn("source_label: ", wrapped_chunks[0].wrapped_content)
+            self.assertIn("trust_zone: untrusted_external", wrapped_chunks[0].wrapped_content)
 
             decision = evaluate_tool_request(
                 ToolRequest(

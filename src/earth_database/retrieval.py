@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from earth_database.constraints import MemoryConstraints
 from earth_database.observability import JsonlEventLogger
 from earth_database.routing import MemoryRouter, RoutePlan
-from earth_database.storage import EarthStorage, ItemRecord
+from earth_database.storage import ChunkRecord, EarthStorage, ItemRecord
 from earth_database.trust.schema import (
     ContentRole,
     InjectionRisk,
@@ -29,6 +29,13 @@ class RetrievalResult:
 @dataclass(frozen=True)
 class WrappedRetrievedMemory:
     item: ItemRecord
+    trust: TrustMetadata
+    wrapped_content: str
+
+
+@dataclass(frozen=True)
+class WrappedRetrievedChunk:
+    chunk: ChunkRecord
     trust: TrustMetadata
     wrapped_content: str
 
@@ -133,6 +140,39 @@ class MemoryRetriever:
             )
         return tuple(wrapped)
 
+    def retrieve_wrapped_chunks(self, *, item_id: str) -> tuple[WrappedRetrievedChunk, ...]:
+        chunks = self.storage.list_chunks_for_item(item_id)
+        wrapped: list[WrappedRetrievedChunk] = []
+        for chunk in chunks:
+            trust = _trust_for_chunk(chunk)
+            wrapped_content = wrap_retrieved_content(
+                chunk.content,
+                trust,
+                source_label=f"{chunk.item_id}#chunk-{chunk.chunk_index}",
+            )
+            wrapped.append(
+                WrappedRetrievedChunk(
+                    chunk=chunk,
+                    trust=trust,
+                    wrapped_content=wrapped_content,
+                )
+            )
+            self.logger.emit(
+                stage="trust",
+                event="retrieved_content_wrapped",
+                payload={
+                    "source_type": trust.source_type.value,
+                    "trust_zone": trust.trust_zone.value,
+                    "injection_risk": trust.injection_risk.value,
+                    "reason": "retrieved chunk wrapped with authority metadata",
+                    "source_event_id": chunk.source_event_id,
+                    "item_id": chunk.item_id,
+                    "chunk_id": chunk.id,
+                    "chunk_index": chunk.chunk_index,
+                },
+            )
+        return tuple(wrapped)
+
     def _trust_for_item(self, item: ItemRecord) -> TrustMetadata:
         metadata_trust = item.metadata.get("trust_metadata")
         if isinstance(metadata_trust, dict):
@@ -163,4 +203,17 @@ def _coerce_trust_zone(value: object) -> TrustZone:
         except ValueError:
             return TrustZone.UNKNOWN
     return TrustZone.UNKNOWN
+
+
+def _trust_for_chunk(chunk: ChunkRecord) -> TrustMetadata:
+    return TrustMetadata(
+        source_type=coerce_source_type(chunk.source_type),
+        trust_zone=_coerce_trust_zone(chunk.trust_zone),
+        content_role=coerce_content_role(chunk.content_role),
+        injection_risk=coerce_injection_risk(chunk.injection_risk),
+        can_instruct=bool(chunk.can_instruct),
+        can_call_tools=bool(chunk.can_call_tools),
+        can_override_policy=bool(chunk.can_override_policy),
+        provenance_note=chunk.provenance_note,
+    )
 

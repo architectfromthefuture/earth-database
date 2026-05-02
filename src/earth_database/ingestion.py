@@ -13,6 +13,7 @@ from earth_database.provenance import content_sha256, runtime_provenance, utc_no
 from earth_database.scheduler import Scheduler
 from earth_database.storage import EarthStorage, JobRecord, new_id
 from earth_database.trust.classifier import classify_trust
+from earth_database.trust.chunking import chunk_text
 from earth_database.trust.injection_scan import find_prompt_injection_indicators, scan_prompt_injection_risk
 from earth_database.trust.schema import (
     ContentRole,
@@ -103,6 +104,20 @@ class IngestionService:
                 now_utc=now,
                 trust_metadata=trust_dict,
             )
+            for chunk in chunk_text(content, trust):
+                self.storage.insert_item_chunk(
+                    conn=conn,
+                    chunk_id=new_id("chk"),
+                    item_id=item_id,
+                    source_event_id=event_id,
+                    chunk_index=chunk.chunk_index,
+                    content=chunk.content,
+                    char_start=chunk.char_start,
+                    char_end=chunk.char_end,
+                    token_count=chunk.token_count,
+                    trust_metadata=trust_dict,
+                    now_utc=now,
+                )
             event_payload = {
                 "content": content,
                 "filename": (metadata or {}).get("filename") if isinstance(metadata, dict) else None,
