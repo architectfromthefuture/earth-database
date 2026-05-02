@@ -571,6 +571,62 @@ class EarthStorage:
             ).fetchall()
             return [self._observation_from_row(row) for row in rows]
 
+    def list_events_by_injection_risk(
+        self,
+        injection_risk: str,
+        *,
+        limit: int = 100,
+    ) -> list[EventRecord]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM events
+                WHERE injection_risk = ?
+                ORDER BY ts_utc DESC
+                LIMIT ?
+                """,
+                (injection_risk, limit),
+            ).fetchall()
+            return [self._event_from_row(row) for row in rows]
+
+    def list_events_by_trust_zone(
+        self,
+        trust_zone: str,
+        *,
+        limit: int = 100,
+    ) -> list[EventRecord]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM events
+                WHERE trust_zone = ?
+                ORDER BY ts_utc DESC
+                LIMIT ?
+                """,
+                (trust_zone, limit),
+            ).fetchall()
+            return [self._event_from_row(row) for row in rows]
+
+    def list_recent_security_observations(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[ObservationMemoryRecord]:
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT observation_memories.* FROM observation_memories
+                JOIN events ON events.id = observation_memories.source_event_id
+                WHERE events.injection_risk = 'high'
+                   OR observation_memories.observation LIKE '%prompt-injection%'
+                   OR observation_memories.observation LIKE '%security%'
+                ORDER BY observation_memories.created_at_utc DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [self._observation_from_row(row) for row in rows]
+
     def list_chunks_for_item(self, item_id: str) -> list[ChunkRecord]:
         with self.connection() as conn:
             rows = conn.execute(
