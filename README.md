@@ -1,6 +1,8 @@
 # earth-database
 
-**One line:** A local embedded memory system that separates ingestion, storage, retrieval, routing, scheduling, provenance, constraints, and observability into inspectable layers.
+**One line:** A local embedded memory system that separates ingestion,
+storage, retrieval, routing, scheduling, provenance, constraints, and
+observability into inspectable layers.
 
 ## Status
 
@@ -9,7 +11,11 @@
 
 ## What This Is
 
-`earth-database` is a small memory substrate for systems that need predictable local reads and writes before they need distributed services. It uses SQLite in WAL mode as the source of truth, FTS5 for exact/provenance-first retrieval, JSONL event logs for observability, and an explicit scheduler table for slow background work.
+`earth-database` is a small memory substrate for systems that need predictable
+local reads and writes before they need distributed services. It uses SQLite in
+WAL mode as the source of truth, FTS5 for exact/provenance-first retrieval,
+JSONL event logs for observability, and an explicit scheduler table for slow
+background work.
 
 The design keeps the hot path narrow:
 
@@ -19,7 +25,9 @@ The design keeps the hot path narrow:
 4. Update local FTS.
 5. Enqueue derived work for later.
 
-Embeddings, summaries, compaction, vector indexes, and policy learning are slow-path jobs. They can improve retrieval later, but they do not own the canonical record.
+Embeddings, summaries, compaction, vector indexes, and policy learning are
+slow-path jobs. They can improve retrieval later, but they do not own the
+canonical record.
 
 ## What This Is Not
 
@@ -39,7 +47,9 @@ python -m pytest
 python -m earth_database demo
 ```
 
-The demo creates a local SQLite database and JSONL trace under a temporary directory, ingests one record, retrieves it through FTS, and prints queued background jobs.
+The demo creates a local SQLite database and JSONL trace under a temporary
+directory, ingests one record, retrieves it through FTS, and prints queued
+background jobs.
 
 ## Architecture At A Glance
 
@@ -62,7 +72,8 @@ flowchart LR
 ## Layer Boundaries
 
 - `ingestion.py` validates and writes canonical memory without doing slow enrichment.
-- `storage.py` owns SQLite schema, WAL setup, transactions, canonical rows, FTS, provenance, events, and jobs.
+- `storage.py` owns SQLite schema, WAL setup, transactions, canonical rows,
+  FTS, provenance, events, and jobs.
 - `retrieval.py` performs exact/provenance-first lookup with optional FTS ranking.
 - `routing.py` selects retrieval strategy from query shape and constraints without mutating storage.
 - `scheduler.py` enqueues, claims, completes, and fails idempotent background jobs.
@@ -72,9 +83,14 @@ flowchart LR
 
 ## Low-Latency Posture
 
-The first implementation assumes one local process or a small set of local tools sharing one SQLite file. SQLite runs in WAL mode, retrieval uses indexed tables and FTS5, and background jobs are explicit records that can be processed by a worker later.
+The first implementation assumes one local process or a small set of local tools
+sharing one SQLite file. SQLite runs in WAL mode, retrieval uses indexed tables
+and FTS5, and background jobs are explicit records that can be processed by a
+worker later.
 
-Latency-sensitive code should not compute embeddings, call LLMs, compact history, or update learned routing weights. Those jobs are scheduled and observable.
+Latency-sensitive code should not compute embeddings, call LLMs, compact
+history, or update learned routing weights. Those jobs are scheduled and
+observable.
 
 ## Verification
 

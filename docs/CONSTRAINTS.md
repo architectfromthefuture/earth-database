@@ -1,6 +1,7 @@
 # Constraints
 
-Constraints are first-class in `earth-database`. They keep low-latency behavior predictable and make future extensions auditable.
+Constraints are first-class in `earth-database`.
+They keep low-latency behavior predictable and make future extensions auditable.
 
 ## Ingestion Constraints
 
@@ -15,8 +16,10 @@ Constraints are first-class in `earth-database`. They keep low-latency behavior 
 
 - SQLite is the source of truth.
 - WAL mode must be enabled on every managed connection.
-- Canonical writes should happen in one transaction: item, tags, event, provenance, FTS row, and jobs.
-- FTS rows are derived for lookup speed, but they are updated transactionally with canonical content.
+- Canonical writes should happen in one transaction:
+  item, tags, event, provenance, FTS row, and jobs.
+- FTS rows are derived for lookup speed, but they are updated transactionally
+  with canonical content.
 - Deleting or compacting content must preserve source event IDs and content hashes.
 
 ## Retrieval Constraints
@@ -31,7 +34,8 @@ Constraints are first-class in `earth-database`. They keep low-latency behavior 
 
 - Routing is read-only.
 - Routing decisions are deterministic for the same query and constraints.
-- A route plan can choose exact lookup, tag/source filtering, FTS, recent items, or future semantic lookup.
+- A route plan can choose exact lookup, tag/source filtering, FTS,
+  recent items, or future semantic lookup.
 - Learned routing weights may only be updated by slow scheduled jobs.
 
 ## Scheduler Constraints
@@ -59,4 +63,6 @@ Constraints are first-class in `earth-database`. They keep low-latency behavior 
 
 ## Low-Latency Constraint
 
-The hot path is not allowed to perform network calls, model inference, vector generation, global compaction, or long-running filesystem scans. These are scheduled background jobs.
+The hot path is not allowed to perform network calls, model inference,
+vector generation, global compaction, or long-running filesystem scans.
+These are scheduled background jobs.

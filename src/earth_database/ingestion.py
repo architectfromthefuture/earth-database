@@ -14,7 +14,10 @@ from earth_database.scheduler import Scheduler
 from earth_database.storage import EarthStorage, JobRecord, new_id
 from earth_database.trust.classifier import classify_trust
 from earth_database.trust.chunking import chunk_text
-from earth_database.trust.injection_scan import find_prompt_injection_indicators, scan_prompt_injection_risk
+from earth_database.trust.injection_scan import (
+    find_prompt_injection_indicators,
+    scan_prompt_injection_risk,
+)
 from earth_database.trust.schema import (
     ContentRole,
     InjectionRisk,
@@ -118,9 +121,10 @@ class IngestionService:
                     trust_metadata=trust_dict,
                     now_utc=now,
                 )
+            filename = (metadata or {}).get("filename") if isinstance(metadata, dict) else None
             event_payload = {
                 "content": content,
-                "filename": (metadata or {}).get("filename") if isinstance(metadata, dict) else None,
+                "filename": filename,
                 "source_uri": source_uri,
             }
             for observation in derive_observations_from_event(
@@ -204,7 +208,10 @@ def _classify_and_scan(
         provenance_note=provenance_note,
     )
     scan_text = _safe_scan_text(content)
-    injection_risk = highest_injection_risk(trust.injection_risk, scan_prompt_injection_risk(scan_text))
+    injection_risk = highest_injection_risk(
+        trust.injection_risk,
+        scan_prompt_injection_risk(scan_text),
+    )
     return TrustMetadata(
         source_type=trust.source_type,
         trust_zone=trust.trust_zone,

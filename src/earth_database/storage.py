@@ -584,7 +584,9 @@ class EarthStorage:
             return [self._chunk_from_row(row) for row in rows]
 
     def _upgrade_schema(self, conn: sqlite3.Connection) -> None:
-        event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        event_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()
+        }
         for column_name, column_type in (
             ("source_type", "TEXT"),
             ("trust_zone", "TEXT"),

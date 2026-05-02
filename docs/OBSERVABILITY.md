@@ -44,7 +44,8 @@ Each item stores provenance with:
 - `runtime`
 - `constraints`
 
-The runtime block may include Python version, platform, and package version. It must not include secrets.
+The runtime block may include Python version, platform, and package version.
+It must not include secrets.
 
 ## Scheduler Trace Format
 
@@ -69,11 +70,13 @@ Scheduler trace payloads should include:
 
 ## Latency Metrics
 
-The scaffold does not include a metrics daemon. Tests and demos can measure elapsed milliseconds around:
+The scaffold does not include a metrics daemon. Tests and demos can measure
+elapsed milliseconds around:
 
 - ingestion command duration
 - exact lookup duration
 - FTS query duration
 - job claim duration
 
-If this becomes a service, expose p50 and p95 for those operations before adding distributed tracing.
+If this becomes a service, expose p50 and p95 for those operations before
+adding distributed tracing.
