@@ -8,12 +8,29 @@ from earth_database.constraints import MemoryConstraints
 from earth_database.observability import JsonlEventLogger
 from earth_database.routing import MemoryRouter, RoutePlan
 from earth_database.storage import EarthStorage, ItemRecord
+from earth_database.trust.schema import (
+    ContentRole,
+    InjectionRisk,
+    TrustMetadata,
+    TrustZone,
+    coerce_content_role,
+    coerce_injection_risk,
+    coerce_source_type,
+)
+from earth_database.trust.wrappers import wrap_retrieved_content
 
 
 @dataclass(frozen=True)
 class RetrievalResult:
     route: RoutePlan
     items: tuple[ItemRecord, ...]
+
+
+@dataclass(frozen=True)
+class WrappedRetrievedMemory:
+    item: ItemRecord
+    trust: TrustMetadata
+    wrapped_content: str
 
 
 class MemoryRetriever:
@@ -83,4 +100,65 @@ class MemoryRetriever:
             },
         )
         return RetrievalResult(route=route, items=items)
+
+    def retrieve_wrapped(self, **kwargs: object) -> tuple[WrappedRetrievedMemory, ...]:
+        result = self.retrieve(**kwargs)
+        wrapped: list[WrappedRetrievedMemory] = []
+        for item in result.items:
+            trust = self._trust_for_item(item)
+            wrapped_content = wrap_retrieved_content(
+                item.content,
+                trust,
+                source_label=item.source_uri,
+            )
+            wrapped.append(
+                WrappedRetrievedMemory(
+                    item=item,
+                    trust=trust,
+                    wrapped_content=wrapped_content,
+                )
+            )
+            self.logger.emit(
+                stage="trust",
+                event="retrieved_content_wrapped",
+                payload={
+                    "source_type": trust.source_type.value,
+                    "trust_zone": trust.trust_zone.value,
+                    "injection_risk": trust.injection_risk.value,
+                    "reason": "retrieved memory wrapped with authority metadata",
+                    "item_id": item.id,
+                },
+            )
+        return tuple(wrapped)
+
+    def _trust_for_item(self, item: ItemRecord) -> TrustMetadata:
+        metadata_trust = item.metadata.get("trust_metadata")
+        if isinstance(metadata_trust, dict):
+            return TrustMetadata(
+                source_type=coerce_source_type(metadata_trust.get("source_type")),
+                trust_zone=_coerce_trust_zone(metadata_trust.get("trust_zone")),
+                content_role=coerce_content_role(metadata_trust.get("content_role")),
+                injection_risk=coerce_injection_risk(metadata_trust.get("injection_risk")),
+                can_instruct=bool(metadata_trust.get("can_instruct", False)),
+                can_call_tools=bool(metadata_trust.get("can_call_tools", False)),
+                can_override_policy=bool(metadata_trust.get("can_override_policy", False)),
+                provenance_note=metadata_trust.get("provenance_note"),
+            )
+        return TrustMetadata(
+            source_type=coerce_source_type(item.source_type),
+            trust_zone=TrustZone.UNTRUSTED_EXTERNAL,
+            content_role=ContentRole.EVIDENCE,
+            injection_risk=InjectionRisk.LOW,
+        )
+
+
+def _coerce_trust_zone(value: object) -> TrustZone:
+    if isinstance(value, TrustZone):
+        return value
+    if isinstance(value, str):
+        try:
+            return TrustZone(value)
+        except ValueError:
+            return TrustZone.UNKNOWN
+    return TrustZone.UNKNOWN
 

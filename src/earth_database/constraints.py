@@ -17,7 +17,21 @@ class MemoryConstraints:
     max_tags: int = 32
     max_tag_length: int = 64
     max_result_limit: int = 100
-    allowed_source_types: tuple[str, ...] = ("text", "markdown", "note", "cli", "test")
+    allowed_source_types: tuple[str, ...] = (
+        "text",
+        "markdown",
+        "note",
+        "cli",
+        "test",
+        "user_input",
+        "system_generated",
+        "internal_event",
+        "uploaded_file",
+        "external_repo_file",
+        "external_webpage",
+        "external_email",
+        "unknown",
+    )
     allowed_job_types: tuple[str, ...] = (
         "build_summary",
         "build_embedding",
