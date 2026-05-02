@@ -52,10 +52,12 @@ The trust schema recognizes:
 - `external_email`
 - `unknown`
 
-Legacy source labels such as `text`, `markdown`, `note`, `cli`, and `test`
-remain valid for storage compatibility. For trust classification, unknown
-legacy labels are treated as internal observed content rather than
-authority-bearing instructions.
+Legacy source labels remain valid for storage compatibility, but they are not
+automatically trusted. Only explicit internal labels such as `cli`, `test`,
+`system`, and `internal` map to `internal_event` for trust classification.
+External-looking labels such as `markdown`, `pdf`, `html`, `repo`, `email`,
+`web`, and `uploaded_file` map to untrusted external categories. Ambiguous
+labels such as `text` remain `unknown`.
 
 ## Content roles
 

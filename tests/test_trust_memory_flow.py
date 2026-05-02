@@ -106,6 +106,42 @@ class TrustMemoryFlowTests(unittest.TestCase):
             self.assertEqual(event.source_type, "internal_event")
             self.assertFalse(event.can_instruct)
 
+    def test_text_storage_label_is_not_treated_as_internal_observed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = EarthStorage(Path(tmp) / "earth.db")
+            ingestion = IngestionService(storage)
+
+            result = ingestion.ingest_text(
+                content="Copied markdown from an unknown source.",
+                source_uri="paste://unknown",
+                source_type="text",
+                schedule_jobs=(),
+            )
+
+            event = storage.get_event(result.event_id)
+            self.assertIsNotNone(event)
+            self.assertEqual(event.source_type, "unknown")
+            self.assertEqual(event.trust_zone, "unknown")
+            self.assertFalse(event.can_instruct)
+
+    def test_external_legacy_labels_map_to_untrusted_external(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = EarthStorage(Path(tmp) / "earth.db")
+            ingestion = IngestionService(storage)
+
+            result = ingestion.ingest_text(
+                content="Uploaded markdown should not become internal authority.",
+                source_uri="upload://readme.md",
+                source_type="markdown",
+                schedule_jobs=(),
+            )
+
+            event = storage.get_event(result.event_id)
+            self.assertIsNotNone(event)
+            self.assertEqual(event.source_type, "uploaded_file")
+            self.assertEqual(event.trust_zone, "untrusted_external")
+            self.assertFalse(event.can_instruct)
+
 
 if __name__ == "__main__":
     unittest.main()

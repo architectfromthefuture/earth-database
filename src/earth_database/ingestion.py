@@ -30,6 +30,25 @@ from earth_database.trust.schema import (
 
 DEFAULT_BACKGROUND_JOBS = ("build_summary", "build_embedding")
 
+LEGACY_INTERNAL_SOURCE_TYPES = {
+    "cli": SourceType.INTERNAL_EVENT,
+    "internal": SourceType.INTERNAL_EVENT,
+    "system": SourceType.INTERNAL_EVENT,
+    "test": SourceType.INTERNAL_EVENT,
+}
+
+LEGACY_EXTERNAL_SOURCE_TYPES = {
+    "email": SourceType.EXTERNAL_EMAIL,
+    "html": SourceType.EXTERNAL_WEBPAGE,
+    "markdown": SourceType.UPLOADED_FILE,
+    "pdf": SourceType.UPLOADED_FILE,
+    "repo": SourceType.EXTERNAL_REPO_FILE,
+    "text": SourceType.UNKNOWN,
+    "upload": SourceType.UPLOADED_FILE,
+    "web": SourceType.EXTERNAL_WEBPAGE,
+    "webpage": SourceType.EXTERNAL_WEBPAGE,
+}
+
 
 @dataclass(frozen=True)
 class IngestResult:
@@ -237,5 +256,12 @@ def _trust_source_type(source_type: str | SourceType | None) -> SourceType:
     normalized = coerce_source_type(source_type)
     if normalized != SourceType.UNKNOWN:
         return normalized
-    return SourceType.INTERNAL_EVENT
+    if source_type is None:
+        return SourceType.UNKNOWN
+    storage_label = str(source_type).strip().casefold()
+    if storage_label in LEGACY_INTERNAL_SOURCE_TYPES:
+        return LEGACY_INTERNAL_SOURCE_TYPES[storage_label]
+    if storage_label in LEGACY_EXTERNAL_SOURCE_TYPES:
+        return LEGACY_EXTERNAL_SOURCE_TYPES[storage_label]
+    return SourceType.UNKNOWN
 

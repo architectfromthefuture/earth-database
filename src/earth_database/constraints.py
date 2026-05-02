@@ -20,6 +20,13 @@ class MemoryConstraints:
     allowed_source_types: tuple[str, ...] = (
         "text",
         "markdown",
+        "pdf",
+        "html",
+        "web",
+        "repo",
+        "email",
+        "system",
+        "internal",
         "note",
         "cli",
         "test",
