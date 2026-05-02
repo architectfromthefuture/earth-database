@@ -15,7 +15,7 @@ def derive_observations_from_event(
     injection_risk: str | None,
 ) -> tuple[str, ...]:
     observations: list[str] = []
-    if event_type == "item_ingested":
+    if event_type in {"item_ingested", "file_ingested"}:
         source_uri = str(payload.get("source_uri") or "unknown source")
         observations.append(f"Content was ingested from {source_uri}.")
 

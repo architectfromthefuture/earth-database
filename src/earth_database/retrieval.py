@@ -106,6 +106,7 @@ class MemoryRetriever:
         wrapped: list[WrappedRetrievedMemory] = []
         for item in result.items:
             trust = self._trust_for_item(item)
+            provenance = self.storage.get_provenance_for_item(item.id)
             wrapped_content = wrap_retrieved_content(
                 item.content,
                 trust,
@@ -126,6 +127,7 @@ class MemoryRetriever:
                     "trust_zone": trust.trust_zone.value,
                     "injection_risk": trust.injection_risk.value,
                     "reason": "retrieved memory wrapped with authority metadata",
+                    "source_event_id": provenance.event_id if provenance else None,
                     "item_id": item.id,
                 },
             )

@@ -65,13 +65,18 @@ class TrustMemoryFlowTests(unittest.TestCase):
             self.assertFalse(decision.allowed)
 
             events = [
-                json.loads(line)["event"]
+                json.loads(line)
                 for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
             ]
-            self.assertIn("trust_classification_applied", events)
-            self.assertIn("prompt_injection_risk_detected", events)
-            self.assertIn("retrieved_content_wrapped", events)
-            self.assertIn("tool_request_blocked", events)
+            event_names = [event["event"] for event in events]
+            wrapped_event = next(
+                event for event in events if event["event"] == "retrieved_content_wrapped"
+            )
+            self.assertEqual(wrapped_event["payload"]["source_event_id"], result.event_id)
+            self.assertIn("trust_classification_applied", event_names)
+            self.assertIn("prompt_injection_risk_detected", event_names)
+            self.assertIn("retrieved_content_wrapped", event_names)
+            self.assertIn("tool_request_blocked", event_names)
 
     def test_existing_ingest_calls_still_work_without_trust_arguments(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
